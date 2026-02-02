@@ -66,6 +66,14 @@ func (s *watcherStore) Delete(obj interface{}) error {
 	return nil
 }
 
+func (s *watcherStore) List() []interface{} {
+	// Try to cast the internal store to cache.Store (which has List)
+	if store, ok := s.ReflectorStore.(cache.Store); ok {
+		return store.List()
+	}
+	return nil
+}
+
 func newWatcherStore(config *WatcherStoreConfig) *watcherStore {
 	var cacheStorage cache.ReflectorStore
 	switch config.StorageType {

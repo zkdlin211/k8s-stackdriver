@@ -1,6 +1,8 @@
 package podlabels
 
 import (
+	"fmt"
+	"runtime"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -139,4 +141,55 @@ func getLabelsFromPod(pod *corev1.Pod) map[string]string {
 		return nil
 	}
 	return transformedLabels
+}
+
+// LogCacheStats prints the count and estimated memory usage of the informer's cache.
+func (informer *PodLabelsSharedInformer) LogCacheStats() {
+	// 1. Get all objects currently in the store
+	items := informer.informer.GetStore().List()
+
+	count := 0
+	var estimatedBytes int64
+
+	for _, item := range items {
+		pod, ok := item.(*corev1.Pod)
+		if !ok {
+			continue
+		}
+		count++
+
+		// 2. Rough estimation of the struct content in memory
+		// Base struct overhead (approximate)
+		estimatedBytes += 100
+
+		// String data (Name + Namespace)
+		estimatedBytes += int64(len(pod.Name) + len(pod.Namespace))
+
+		// OwnerReferences (Slice + Strings inside)
+		for _, ref := range pod.OwnerReferences {
+			estimatedBytes += int64(len(ref.Name) + len(ref.Kind) + len(ref.APIVersion))
+			estimatedBytes += 32 // Overhead for struct pointers/bools
+		}
+
+		// Labels (Map overhead + Key/Values)
+		// A Go map has significant overhead (~48 bytes + buckets).
+		// We assume a base overhead + content.
+		if len(pod.Labels) > 0 {
+			estimatedBytes += 48
+			for k, v := range pod.Labels {
+				estimatedBytes += int64(len(k) + len(v) + 16)
+			}
+		}
+	}
+
+	// 3. Print the results
+	fmt.Printf("--- PodLabelInformer Stats ---\n")
+	fmt.Printf("Object Count: %d\n", count)
+	fmt.Printf("Estimated Payload Size: %.2f MB\n", float64(estimatedBytes)/1024/1024)
+
+	// Optional: Print total System Memory to compare
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	fmt.Printf("Total System Alloc: %.2f MB\n", float64(m.Alloc)/1024/1024)
+	fmt.Printf("------------------------------\n")
 }

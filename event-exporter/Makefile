@@ -19,8 +19,8 @@ BINARY_NAME = event-exporter
 ALL_ARCH=amd64 arm64
 IMAGE_NAME = event-exporter
 
-PREFIX ?= staging-k8s.gcr.io
-TAG ?= v0.5.10
+PREFIX ?= gcr.io/yaoyuhan-gke-dev
+TAG ?= v0.5.10-debug
 
 IMAGE=$(PREFIX)/$(IMAGE_NAME)
 

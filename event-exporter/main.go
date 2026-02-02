@@ -17,11 +17,16 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	rt "runtime"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -95,6 +100,26 @@ func main() {
 		factory := podlabels.NewPodLabelsSharedInformerFactory(client, strings.Split(*systemNamespaces, ","))
 		informer = factory.NewPodLabelsSharedInformer()
 		factory.Run(stopCh)
+		go func() {
+			ticker := time.NewTicker(1 * time.Minute)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					informer.(*podlabels.PodLabelsSharedInformer).LogCacheStats()
+					var m rt.MemStats
+					rt.ReadMemStats(&m)
+					fmt.Printf("Stream Progress: Heap Alloc: %.2f MB\n", float64(m.Alloc)/1024/1024)
+					if m.Alloc > 200*1024*1024 {
+						fmt.Println("CRITICAL MEMORY THRESHOLD REACHED - DUMPING PROFILE")
+						LogHeapProfile()
+					}
+				case <-stopCh:
+					return
+				}
+			}
+		}()
 	}
 
 	sink, err := stackdriver.NewSdSinkFactory().CreateNew(strings.Split(*sinkOpts, " "), informer)
@@ -128,4 +153,20 @@ func main() {
 	}()
 
 	eventExporter.Run(stopCh)
+}
+
+func LogHeapProfile() {
+	var buf bytes.Buffer
+
+	// Write the heap profile to the buffer
+	if err := pprof.WriteHeapProfile(&buf); err != nil {
+		log.Printf("Could not write heap profile: %v", err)
+		return
+	}
+
+	// Encode to Base64 so it can be safely printed as a log line
+	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
+
+	// Print with a distinct header so you can easily grep/find it
+	log.Printf("--- START HEAP PROFILE ---\n%s\n--- END HEAP PROFILE ---", encoded)
 }
